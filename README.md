@@ -16,7 +16,7 @@ Clone and run installer:
 git clone https://github.com/splogdes/fuznet
 cd fuznet
 
-./scripts/install_user_service.sh \
+./scripts/install.sh \
     --vivado-path /path/to/vivado \
     --service
 ```
