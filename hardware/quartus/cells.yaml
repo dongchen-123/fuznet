@@ -1,0 +1,35 @@
+# configurable LUT
+fiftyfivenm_lcell_comb:
+  weight: 100
+  ports:
+    dataa:   { dir: input }
+    datab:   { dir: input }
+    datac:   { dir: input }
+    datad:   { dir: input }
+    combout: { dir: output }
+  params:
+    lut_mask: { width: 16 }  # controls LUT logic
+  resources: { lc: 1 }
+
+# DFF
+dffeas:
+  weight: 100
+  ports:
+    q:   { dir: output, seq_inputs: [d] }
+    clk: { dir: input, type: ext_clk }   # Intel: no clock buffer, ext_clk connected directly
+    d:   { dir: input }
+  resources: { lc: 1 }
+
+# input buffer
+fiftyfivenm_io_ibuf:
+  weight: 0      # buffer-only: never randomly instantiated (a pin must drive exactly one ibuf)
+  ports:
+    i: { dir: input, type: ext_in }
+    o: { dir: output }
+
+  # output buffer
+fiftyfivenm_io_obuf:
+  weight: 100
+  ports:
+    i: { dir: input }
+    o: { dir: output, type: ext_out }
