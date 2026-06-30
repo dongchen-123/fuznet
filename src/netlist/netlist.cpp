@@ -92,9 +92,15 @@ void Netlist::add_initial_nets() {
     add_buffer(
         input_net, lib.get_random_buffer(NetType::EXT_IN, NetType::LOGIC)
     );
-    add_buffer(
-        clock_net, lib.get_random_buffer(NetType::EXT_CLK, NetType::CLK)
-    );
+    // A dedicated ext_clk->clk buffer (e.g. Xilinx BUFG) is optional. Quartus
+    // libraries have none, so if no clk buffer exists, connect to EXT_CLK directly
+    try {
+        add_buffer(
+            clock_net, lib.get_random_buffer(NetType::EXT_CLK, NetType::CLK)
+        );
+    } catch (const std::exception&) {
+        // no ext_clk->clk buffer in this library, clock pin used directly
+    }
 }
     
 
