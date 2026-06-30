@@ -12,8 +12,11 @@ endif()
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS ${AVAILABLE_BUILD_TYPES})
 message(STATUS "Configured for ${CMAKE_BUILD_TYPE} build")
 
-set(CMAKE_CXX_FLAGS_DEBUG   "-g -O0 -Wall -Wextra")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -Wall -Wextra")
+# GCC/Clang-only flags which MSVC rejects, so guard for non-MSVC
+if(NOT MSVC)
+  set(CMAKE_CXX_FLAGS_DEBUG   "-g -O0 -Wall -Wextra")
+  set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -Wall -Wextra")
+endif()
 
 
 option(ENABLE_STATIC_LINK "Link executables statically" OFF)
