@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Arguments: 1: synth_top, 2: impl_top, 3: out, 4: log_dir (optional)
+# Arguments: 1: out, 2: synth_top, 3: impl_top, 4: log_dir (optional)
 # Returns: 0 on pass, 1 on failure, 2 on error
 
 run_verilator() {
@@ -24,17 +24,13 @@ run_verilator() {
         return 2
     fi
 
-    if ! verilator -cc --exe --build     \
-            -DGLBL -Wno-fatal -I"$out"   \
-            --trace-underscore           \
-            -Mdir "$out/build"           \
-            "$out/eq_top.v"              \
-            "$PRIMS_V"                   \
-            "$out/$cpp_tb"               \
-            > "$log_dir/verilator.log" 2>&1
-    then
-        fail "Verilator build failed"
-        return 2
+    if ! verilator -cc --exe $VERILATOR_FLAGS -Wno-fatal -I"$out" \
+            --trace-underscore -Mdir "$out/build" \
+            "$out/eq_top.v" "$PRIMS_V" "$out/$cpp_tb" > "$log_dir/verilator.log" 2>&1; then
+        fail "Verilator generate failed"; return 2
+    fi
+    if ! make -C "$out/build" -f Veq_top.mk ${VERILATOR_CXX:+CXX="$VERILATOR_CXX"} >> "$log_dir/verilator.log" 2>&1; then
+        fail "Verilator build failed"; return 2
     fi
 
     if "$out/build/Veq_top" >> "$log_dir/verilator_run.log" 2>&1; then

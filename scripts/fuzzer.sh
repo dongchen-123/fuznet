@@ -10,7 +10,11 @@ set -euo pipefail
 # ───── shared helpers / stage functions ───────────────────────────────────
 source "$(dirname "$0")/../flows/fuzzing/lib.sh"
 source "$(dirname "$0")/../flows/fuzzing/10_gen.sh"
-source "$(dirname "$0")/../flows/fuzzing/20_impl.sh"
+if [ "$VENDOR" = "quartus" ]; then 
+    source "$(dirname "$0")/../flows/quartus/impl.sh"
+else 
+    source "$(dirname "$0")/../flows/fuzzing/20_impl.sh"
+fi
 source "$(dirname "$0")/../flows/fuzzing/30_struct.sh"
 source "$(dirname "$0")/../flows/fuzzing/40_miter.sh"
 source "$(dirname "$0")/../flows/fuzzing/50_verilator.sh"
@@ -46,9 +50,13 @@ PERMANENT_LOGS=${PERMANENT_LOGS:-logs}
 # ───── result bookkeeping & traps ─────────────────────────────────────────
 RESULT_CATEGORY=""
 
-cp $CELL_LIB $VIVADO_TCL $SETTINGS_TOML "$OUT_DIR/" 2>/dev/null || true
+if [ "$VENDOR" = "quartus" ]; then
+    cp "$CELL_LIB" "$SETTINGS_TOML" "$OUT_DIR/" 2>/dev/null || true
+else
+    cp "$CELL_LIB" "$VIVADO_TCL" "$SETTINGS_TOML" "$OUT_DIR/" 2>/dev/null || true
+    export VIVADO_TCL="$OUT_DIR/$(basename "$VIVADO_TCL")"
+fi
 export CELL_LIB="$OUT_DIR/$(basename "$CELL_LIB")"
-export VIVADO_TCL="$OUT_DIR/$(basename "$VIVADO_TCL")"
 export SETTINGS_TOML="$OUT_DIR/$(basename "$SETTINGS_TOML")"
 export HASH_FILE="${PERMANENT_LOGS}/seen_netlists.txt"
 
@@ -60,13 +68,10 @@ on_exit() {
     local results_csv="$PERMANENT_LOGS/results.csv"
 
     mkdir -p "$PERMANENT_LOGS"
+    if [ "$VENDOR" = "quartus" ]; then vivado_stats_header=""; \
+    else vivado_stats_header=$(./scripts/vivado_log_parse.py "$LOG_DIR/vivado.log" --header-only); fi
 
     if [[ ! -f $results_csv ]]; then
-
-        vivado_stats_header=$(
-            ./scripts/vivado_log_parse.py "$LOG_DIR/vivado.log" --header-only
-        )
-
         cat <<EOF > "$results_csv"
 timestamp,worker,seed,category,runtime_micro,\
 gen_micro,impl_micro,struct_micro,miter_micro,\
@@ -148,7 +153,9 @@ EOF
         "$seq_mod_prob" "$seq_port_prob" \
         "$cmd_addmod" "$cmd_extnet" "$cmd_undrive" "$cmd_drive" "$cmd_drives" "$cmd_buf")
 
-    result_line+=$(./scripts/vivado_log_parse.py "$LOG_DIR/vivado.log")
+    if [ "$VENDOR" != "quartus" ]; then
+        result_line+=$(./scripts/vivado_log_parse.py "$LOG_DIR/vivado.log")
+    fi
 
     echo "$result_line" >> "$results_csv"
 
@@ -211,62 +218,76 @@ impl_ret=0
 time_stage run_impl "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$clk_period" "$FUZZED_TOP" "$LOG_DIR" || impl_ret=$?
 case $impl_ret in
     0) ;;
-    1) RESULT_CATEGORY="vivado_fail" ; exit 1 ;;
-    2) RESULT_CATEGORY="vivado_crash"; capture_failed_seed "Vivado crashed" "rare"; exit 0 ;;
-    3) RESULT_CATEGORY="vivado_timeout"; capture_failed_seed "Vivado timed out" "rare"; exit 1 ;;
+    1) RESULT_CATEGORY="impl_fail" ; exit 1 ;;
+    2) RESULT_CATEGORY="impl_crash"; capture_failed_seed "Implementation crashed" "rare"; exit 0 ;;
+    3) RESULT_CATEGORY="impl_timeout"; capture_failed_seed "Implementation timed out" "rare"; exit 1 ;;
 esac
 
-# ───── structural equiv (Yosys) ───────────────────────────────
-if time_stage run_struct "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR"; then
-    RESULT_CATEGORY="structural_pass"
-    exit 0
-fi
-
-# ───── SAT miter (Yosys-sat) ──────────────────────────────────
-miter_ret=0
-time_stage run_miter "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR" || miter_ret=$?
-
-if (( miter_ret == 0 )); then
-    RESULT_CATEGORY="miter_pass"
-    exit 0
-elif (( miter_ret == 2 )); then
-    RESULT_CATEGORY="miter_unknown"
-    capture_failed_seed "miter unknown state"
-    exit 1
-fi
-
-# ───── Verilator simulation fallback ──────────────────────────
-verilator_ret=0
-time_stage run_verilator "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR" || verilator_ret=$?
-
-# ───── optional SMTBMC (Z3) checks ────────────────────────────
-if (( USE_SMTBMC )); then
-    smt="$OUT_DIR/eq_top.smt2"
-    if time_stage run_z3_smt "$OUT_DIR" "$smt" "$LOG_DIR"; then
-        RESULT_CATEGORY="bmc_pass"
+# ───── quartus verilator check ───────────────────────────────
+if [ "$VENDOR" = "quartus" ]; then
+    verilator_ret=0
+    time_stage run_verilator "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR" || verilator_ret=$?
+    case $verilator_ret in
+        0) RESULT_CATEGORY=verilator_pass; exit 0 ;;  # synth and impl equivalent
+        1) RESULT_CATEGORY=verilator_mismatch; capture_failed_seed "Verilator mismatch" "rare";;
+        2) RESULT_CATEGORY=verilator_error; capture_failed_seed "Verilator error" "rare"; exit 1 ;; 
+    esac
+else
+    # vivado path
+    # ───── structural equiv (Yosys) ───────────────────────────────
+    if time_stage run_struct "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR"; then
+        RESULT_CATEGORY="structural_pass"
         exit 0
-    else
-        RESULT_CATEGORY="bmc_fail"
     fi
 
-    if time_stage run_z3_induct "$OUT_DIR" "$smt" "$LOG_DIR"; then
-        RESULT_CATEGORY="induct_pass"
+    # ───── SAT miter (Yosys-sat) ──────────────────────────────────
+    miter_ret=0
+    time_stage run_miter "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR" || miter_ret=$?
+
+    if (( miter_ret == 0 )); then
+        RESULT_CATEGORY="miter_pass"
         exit 0
-    else
-        RESULT_CATEGORY="induct_fail"
+    elif (( miter_ret == 2 )); then
+        RESULT_CATEGORY="miter_unknown"
+        capture_failed_seed "miter unknown state"
+        exit 1
     fi
+
+    # ───── Verilator simulation fallback ──────────────────────────
+    verilator_ret=0
+    time_stage run_verilator "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR" || verilator_ret=$?
+
+    # ───── optional SMTBMC (Z3) checks ────────────────────────────
+    if (( USE_SMTBMC )); then
+        smt="$OUT_DIR/eq_top.smt2"
+        if time_stage run_z3_smt "$OUT_DIR" "$smt" "$LOG_DIR"; then
+            RESULT_CATEGORY="bmc_pass"
+            exit 0
+        else
+            RESULT_CATEGORY="bmc_fail"
+        fi
+
+        if time_stage run_z3_induct "$OUT_DIR" "$smt" "$LOG_DIR"; then
+            RESULT_CATEGORY="induct_pass"
+            exit 0
+        else
+            RESULT_CATEGORY="induct_fail"
+        fi
+    fi
+
+    # ───── result handling ────────────────────────────────────────
+    case "$miter_ret:$verilator_ret" in
+        "1:1") RESULT_CATEGORY="miter_fail_verilator_fail"       ;;
+        "1:0") RESULT_CATEGORY="miter_fail_verilator_pass"       ;   capture_failed_seed "miter failed, but Verilator passed" "epic"; exit 0 ;;
+        "1:2") RESULT_CATEGORY="miter_fail_verilator_error"      ;   capture_failed_seed "miter failed, Verilator error"      "rare"; exit 1 ;;
+        "3:1") RESULT_CATEGORY="miter_timeout_verilator_fail"    ;;
+        "3:2") RESULT_CATEGORY="miter_timeout_verilator_error"   ;   capture_failed_seed "miter timeout, Verilator error"     "rare"; exit 1 ;;
+        "3:0") RESULT_CATEGORY="miter_timeout_verilator_pass"    ;   exit 0 ;;
+        *)     RESULT_CATEGORY="miter_unknown_verilator_unknown" ;   capture_failed_seed "miter unknown, Verilator unknown"   "rare"; exit 1 ;;
+    esac
+
 fi
 
-# ───── result handling ────────────────────────────────────────
-case "$miter_ret:$verilator_ret" in
-    "1:1") RESULT_CATEGORY="miter_fail_verilator_fail"       ;;
-    "1:0") RESULT_CATEGORY="miter_fail_verilator_pass"       ;   capture_failed_seed "miter failed, but Verilator passed" "epic"; exit 0 ;;
-    "1:2") RESULT_CATEGORY="miter_fail_verilator_error"      ;   capture_failed_seed "miter failed, Verilator error"      "rare"; exit 1 ;;
-    "3:1") RESULT_CATEGORY="miter_timeout_verilator_fail"    ;;
-    "3:2") RESULT_CATEGORY="miter_timeout_verilator_error"   ;   capture_failed_seed "miter timeout, Verilator error"     "rare"; exit 1 ;;
-    "3:0") RESULT_CATEGORY="miter_timeout_verilator_pass"    ;   exit 0 ;;
-    *)     RESULT_CATEGORY="miter_unknown_verilator_unknown" ;   capture_failed_seed "miter unknown, Verilator unknown"   "rare"; exit 1 ;;
-esac
 
 # ───── Reduction of failed seeds ─────────────────────────────────
 
@@ -298,7 +319,12 @@ while true; do
                 
     reduction_src_json="$reduction_out_dir/$FUZZED_TOP.json"
 
-    wns=$(scripts/get_wns_before_marker.py "$LOG_DIR/vivado.log")
+    if [ "$VENDOR" = "quartus" ]; then
+        wns=$(awk '/QUARTUS_WNS/{print $2; exit}' "$reduction_out_dir/sta.log" 2>/dev/null || true)
+    else
+        wns=$(scripts/get_wns_before_marker.py "$LOG_DIR/vivado.log")
+    fi
+    
     reduced_netlist_size=$(jq '.total_modules' "$reduction_out_dir/${FUZZED_TOP}_stats.json")
     info "reduced netlist size: $reduced_netlist_size modules"
 
@@ -325,33 +351,34 @@ while true; do
             ;;
     esac
 
-    # ───── Rerun Vivado on reduced netlist ─────────────────────────────
-    vivado_ret=0
-    time_stage run_impl "$reduction_out_dir" "$SYNTH_TOP" "$IMPL_TOP" "$clk_period" "$FUZZED_TOP" "$reduction_log_dir" || vivado_ret=$?
+    # ───── Rerun Quartus/Vivado on reduced netlist ─────────────────────────────
+    rerun_ret=0
+    time_stage run_impl "$reduction_out_dir" "$SYNTH_TOP" "$IMPL_TOP" "$clk_period" "$FUZZED_TOP" "$reduction_log_dir" || rerun_ret=$?
 
 
     # ───── check if reduction was successful ───────────────────────────
     reduction_success=1
-    if (( vivado_ret == 0 )); then
-        miter_ret=0
-        time_stage run_miter "$reduction_out_dir" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR" || miter_ret=$?
-
-        if (( miter_ret != 1 )); then
+    if (( rerun_ret == 0 )); then
+        if [ "$VENDOR" = "quartus" ]; then
             verilator_ret=0
             time_stage run_verilator "$reduction_out_dir" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR" || verilator_ret=$?
-
-            if (( verilator_ret != 1 )); then
-                reduction_success=0
+            (( verilator_ret != 1 )) && reduction_success=0
+        else
+            miter_ret=0
+            time_stage run_miter "$reduction_out_dir" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR" || miter_ret=$?
+            if (( miter_ret != 1 )); then
+                verilator_ret=0
+                time_stage run_verilator "$reduction_out_dir" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR" || verilator_ret=$?
+                (( verilator_ret != 1 )) && reduction_success=0
             fi
-
         fi
-    elif (( vivado_ret == 1 )); then
-        RESULT_CATEGORY="vivado_fail_reduced"
-        capture_failed_seed "Vivado failed on reduced netlist" "rare"
+    elif (( rerun_ret == 1 )); then
+        RESULT_CATEGORY="fail_reduced"
+        capture_failed_seed "Failed on reduced netlist" "rare"
         exit 1
-    elif (( vivado_ret == 3 )); then
-        RESULT_CATEGORY="vivado_timeout_reduced"
-        capture_failed_seed "Vivado timed out on reduced netlist" "rare"
+    elif (( rerun_ret == 3 )); then
+        RESULT_CATEGORY="timeout_reduced"
+        capture_failed_seed "Timed out on reduced netlist" "rare"
         exit 1
     fi
 

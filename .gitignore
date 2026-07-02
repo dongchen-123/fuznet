@@ -8,3 +8,9 @@ result/
 *.log
 clockInfo.txt
 tight_setup_hold_pins.txt
+test.json
+test.v
+test_iter*.dot
+flows/yosys/struct._int.ys.in
+docs/quartus-support-plan.md
+plan.txt
