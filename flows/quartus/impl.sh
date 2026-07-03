@@ -29,14 +29,14 @@ run_impl() {
                 # synth
                 ((quartus_ret == 0)) && step "$QUARTUS_BIN/quartus_map" "$fuzed_top"
                 ((quartus_ret == 0)) && step "$QUARTUS_BIN/quartus_eda" "$fuzed_top" --simulation --tool=modelsim --functional --format=verilog
-                ((quartus_ret == 0)) && mv "simulation/modelsim/top.vo" "$synth_top.v"
+                ((quartus_ret == 0)) && mv "simulation/modelsim/$fuzed_top.vo" "$synth_top.v"
                 ((quartus_ret == 0)) && sed -i "s/module top/module synth/" "$synth_top.v"
 
                 # impl
                 ((quartus_ret == 0)) && step "$QUARTUS_BIN/quartus_fit" "$fuzed_top"
                 ((quartus_ret == 0)) && step "$QUARTUS_BIN/quartus_eda" "$fuzed_top" --simulation --tool=modelsim --functional --format=verilog
                 ((quartus_ret == 0)) && { timeout 600 "$QUARTUS_BIN/quartus_sta" -t "$sta" > sta.log 2>&1 || quartus_ret=$?; }
-                ((quartus_ret == 0)) && mv "simulation/modelsim/top.vo" "$impl_top.v"
+                ((quartus_ret == 0)) && mv "simulation/modelsim/$fuzed_top.vo" "$impl_top.v"
                 ((quartus_ret == 0)) && sed -i "s/module top/module impl/" "$impl_top.v"
                 # Quartus fitter always adds on-chip flash (unvm) and adc block, removed as they
                 # are disconnected and dont affect logic

@@ -30,3 +30,4 @@ else
     export VIVADO_TCL=${VIVADO_TCL:-flows/vivado/impl.tcl}
     export VERILATOR_FLAGS=${VERILATOR_FLAGS:--DGLBL}
     export VERILATOR_CXX=${VERILATOR_CXX:-}  # default g++
+fi
