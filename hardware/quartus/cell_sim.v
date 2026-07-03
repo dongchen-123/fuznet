@@ -34,3 +34,15 @@ module fiftyfivenm_io_obuf (i, oe, seriesterminationcontrol, devoe, o, obar);
   parameter open_drain_output = "false";
   assign o = i;  assign obar = ~i;
 endmodule
+
+// global clock control buffer (inserted by the fitter on the clock network)
+module fiftyfivenm_clkctrl (inclk, clkselect, ena, devclrn, devpor, outclk);
+  input  [3:0] inclk;
+  input  [1:0] clkselect;
+  input        ena, devclrn, devpor;
+  output       outclk;
+  parameter clock_type        = "auto";
+  parameter ena_register_mode = "falling edge";
+  parameter lpm_type          = "fiftyfivenm_clkctrl";
+  assign outclk = inclk[clkselect];   // functional model: pass the selected clock through
+endmodule
