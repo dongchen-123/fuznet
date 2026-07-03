@@ -14,10 +14,15 @@ module dffeas (d, clk, ena, clrn, prn, aload, asdata, sclr, sload, devclrn, devp
   output reg q;
   parameter is_wysiwyg = "true";
   parameter power_up   = "low";
-  always @(posedge clk or negedge clrn or negedge prn)
-    if      (!clrn) q <= 1'b0;
-    else if (!prn)  q <= 1'b1;
-    else if (ena)   q <= d;
+  always @(posedge clk or negedge clrn or negedge prn or posedge aload)
+    if      (!clrn)  q <= 1'b0;          // async clear  (active low)
+    else if (!prn)   q <= 1'b1;          // async preset (active low)
+    else if (aload)  q <= asdata;        // async load
+    else if (ena) begin
+      if      (sclr)  q <= 1'b0;         // sync clear
+      else if (sload) q <= asdata;       // sync load
+      else            q <= d;
+    end
 endmodule
 
 module fiftyfivenm_io_ibuf (i, ibar, nsleep, o);
