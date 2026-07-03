@@ -57,20 +57,24 @@ def load_ports(path):
             elif direction == "output":
                 outputs.append(clean)
 
-    if clk is None:
-        raise ValueError("Clock not found in {}".format(path))
     if not inputs:
         raise ValueError("No inputs found in {}".format(path))
     if not outputs:
         raise ValueError("No outputs found in {}".format(path))
     return clk, inputs, outputs
 
+def has_registers(path):
+    # detects if netlist has sequential logic
+    with open(path) as f:
+        text = f.read()
+    return any(kw in text for kw in ("dffeas", "posedge", "FDRE", "FDCE", "FDPE", "FDSE"))  # contains quartus & vivado ffs
+
 def write_eq_top(outdir, clk, inputs, outputs, gate_top, gold_top):
     path = os.path.join(outdir, "eq_top.v")
     with open(path, "w") as f:
         f.write("module eq_top(\n")
 
-        input_ports = [clk] + inputs
+        input_ports = ([clk] if clk else []) + inputs
         for p in input_ports:
             f.write(f"    input wire {p},\n")
         for o in outputs:
@@ -83,7 +87,8 @@ def write_eq_top(outdir, clk, inputs, outputs, gate_top, gold_top):
         f.write("    wire equivalent;\n\n")
 
         f.write(f"    {gate_top} inst_{gate_top} (\n")
-        f.write(f"        .clk({clk}),\n")
+        if clk:
+            f.write(f"        .clk({clk}),\n")
         for inp in inputs:
             f.write(f"        .{inp}({inp}),\n")
         for i, out in enumerate(outputs):
@@ -92,7 +97,8 @@ def write_eq_top(outdir, clk, inputs, outputs, gate_top, gold_top):
         f.write("    );\n\n")
 
         f.write(f"    {gold_top} inst_{gold_top} (\n")
-        f.write(f"        .clk({clk}),\n")
+        if clk:
+            f.write(f"        .clk({clk}),\n")
         for inp in inputs:
             f.write(f"        .{inp}({inp}),\n")
         for i, out in enumerate(outputs):
@@ -107,7 +113,7 @@ def write_eq_top(outdir, clk, inputs, outputs, gate_top, gold_top):
         f.write("    assign trigger = ~equivalent;\n\n")
         f.write("endmodule\n")
 
-def write_testbench(outdir, tb_name, clk, inputs, outputs, seed, cycles, no_vcd=False):
+def write_testbench(outdir, tb_name, clk, inputs, outputs, seed, cycles, no_vcd=False, clocked=True):
     path = os.path.join(outdir, tb_name)
     with open(path, "w") as tb:
         tb.write("#include <verilated.h>\n")
@@ -133,14 +139,21 @@ def write_testbench(outdir, tb_name, clk, inputs, outputs, seed, cycles, no_vcd=
         tb.write("    auto rnd_bit = [&]() { return rng() & 1; };\n\n")
         tb.write("    std::cerr << \"[TB] seed=\" << seed << \" cycles=\" << cycles << std::endl;\n\n")
         tb.write("    for (uint32_t i = 0; i < cycles; ++i) {\n")
-        tb.write(f"        top->{clk} = 0;\n        top->eval();\n")
-        if not no_vcd:
-            tb.write("        tfp->dump(i * 10);\n")
-        for inp in inputs:
-            tb.write(f"        top->{inp} = rnd_bit();\n")
-        tb.write(f"\n        top->{clk} = 1;\n        top->eval();\n")
-        if not no_vcd:
-            tb.write("        tfp->dump(i * 10 + 5);\n")
+        if clocked:
+            tb.write(f"        top->{clk} = 0;\n        top->eval();\n")
+            if not no_vcd:
+                tb.write("        tfp->dump(i * 10);\n")
+            for inp in inputs:
+                tb.write(f"        top->{inp} = rnd_bit();\n")
+            tb.write(f"\n        top->{clk} = 1;\n        top->eval();\n")
+            if not no_vcd:
+                tb.write("        tfp->dump(i * 10 + 5);\n")
+        else:
+            for inp in inputs:
+                tb.write(f"        top->{inp} = rnd_bit();\n")
+            tb.write("        top->eval();\n")
+            if not no_vcd:
+                tb.write("        tfp->dump(i * 10);\n")
         tb.write("        if (top->trigger) {\n")
         tb.write("            std::cerr << \"[TB] Triggered at cycle \" << i << std::endl;\n")
         for out in outputs:
@@ -157,9 +170,11 @@ def main():
     args = parse_args()
     os.makedirs(args.outdir, exist_ok=True)
 
-    clk, inputs, outputs = load_ports(os.path.join(args.outdir, args.gold_top + ".v"))
+    gold_path = os.path.join(args.outdir, args.gold_top + ".v")
+    clk, inputs, outputs = load_ports(gold_path)
+    clocked = has_registers(gold_path) and clk is not None
     write_eq_top(args.outdir, clk, inputs, outputs, args.gate_top, args.gold_top)
-    write_testbench(args.outdir, args.tb, clk, inputs, outputs, args.seed, args.cycles, args.no_vcd)
+    write_testbench(args.outdir, args.tb, clk, inputs, outputs, args.seed, args.cycles, args.no_vcd, clocked)
 
 if __name__ == "__main__":
     main()
