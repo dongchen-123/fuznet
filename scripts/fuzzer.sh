@@ -216,6 +216,17 @@ fi
 # ───── stage 20 – Vivado PnR ──────────────────────────────────
 impl_ret=0
 time_stage run_impl "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$clk_period" "$FUZZED_TOP" "$LOG_DIR" || impl_ret=$?
+if [ "$VENDOR" = "quartus" ] && (( impl_ret == 0)); then
+    wns=$(awk '/QUARTUS_WNS/{print $2; exit}' "$OUT_DIR/sta.log" 2>/dev/null || true)
+    if [ -n "$wns" ]; then
+        new_clk_period=$(awk -v c="$clk_period" -v w="$wns" \
+                'BEGIN{ p = c - 0.25 - w; if (p < 1.0) p = 1.0; printf "%.3f", p }')
+        info "Refitting under new clk with period $new_clk_period"
+        clk_period="$new_clk_period"
+        time_stage run_impl "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$clk_period" "$FUZZED_TOP" "$LOG_DIR" || impl_ret=$?
+    fi
+fi
+
 case $impl_ret in
     0) ;;
     1) RESULT_CATEGORY="impl_fail" ; exit 1 ;;
@@ -333,7 +344,7 @@ while true; do
         1) RESULT_CATEGORY="reduction_fail"      ; capture_failed_seed "reduction failed" "rare"         ; exit 1 ;;
         2) RESULT_CATEGORY="reduction_minimized" ; capture_failed_seed "reduction no new bug" "legendary"; exit 0 ;;
         3)  if [[ -n $wns ]]; then
-                clk_period=$(awk -v c="$clk_period" -v w="$wns" 'BEGIN{print c - 0.25 - w}')
+                clk_period=$(awk -v c="$clk_period" -v w="$wns" 'BEGIN{ p = c - 0.25 - w; if (p < 1.0) p = 1.0; printf "%.3f", p }')
                 reset=1
             elif (( reduced_netlist_size < 10 )); then
                 RESULT_CATEGORY="reduction_new_bug_small"
