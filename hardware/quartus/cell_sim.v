@@ -14,6 +14,7 @@ module dffeas (d, clk, ena, clrn, prn, aload, asdata, sclr, sload, devclrn, devp
   output reg q;
   parameter is_wysiwyg = "true";
   parameter power_up   = "low";
+  initial q = (power_up == "high") ? 1'b1 : 1'b0;
   always @(posedge clk or negedge clrn or negedge prn or posedge aload)
     if      (!clrn)  q <= 1'b0;          // async clear  (active low)
     else if (!prn)   q <= 1'b1;          // async preset (active low)

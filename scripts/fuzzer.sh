@@ -12,11 +12,12 @@ source "$(dirname "$0")/../flows/fuzzing/lib.sh"
 source "$(dirname "$0")/../flows/fuzzing/10_gen.sh"
 if [ "$VENDOR" = "quartus" ]; then 
     source "$(dirname "$0")/../flows/quartus/impl.sh"
+    source "$(dirname "$0")/../flows/quartus/miter.sh"
 else 
     source "$(dirname "$0")/../flows/fuzzing/20_impl.sh"
+    source "$(dirname "$0")/../flows/fuzzing/40_miter.sh"
 fi
 source "$(dirname "$0")/../flows/fuzzing/30_struct.sh"
-source "$(dirname "$0")/../flows/fuzzing/40_miter.sh"
 source "$(dirname "$0")/../flows/fuzzing/50_verilator.sh"
 source "$(dirname "$0")/../flows/fuzzing/70_reduction.sh"
 # Optional SMT checks
@@ -234,70 +235,58 @@ case $impl_ret in
     3) RESULT_CATEGORY="impl_timeout"; capture_failed_seed "Implementation timed out" "rare"; exit 1 ;;
 esac
 
-# ───── quartus verilator check ───────────────────────────────
-if [ "$VENDOR" = "quartus" ]; then
-    verilator_ret=0
-    time_stage run_verilator "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR" || verilator_ret=$?
-    case $verilator_ret in
-        0) RESULT_CATEGORY=verilator_pass; exit 0 ;;  # synth and impl equivalent
-        1) RESULT_CATEGORY=verilator_mismatch; capture_failed_seed "Verilator mismatch" "rare";;
-        2) RESULT_CATEGORY=verilator_error; capture_failed_seed "Verilator error" "rare"; exit 1 ;; 
-    esac
-else
-    # vivado path
-    # ───── structural equiv (Yosys) ───────────────────────────────
-    if time_stage run_struct "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR"; then
-        RESULT_CATEGORY="structural_pass"
-        exit 0
-    fi
 
-    # ───── SAT miter (Yosys-sat) ──────────────────────────────────
-    miter_ret=0
-    time_stage run_miter "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR" || miter_ret=$?
-
-    if (( miter_ret == 0 )); then
-        RESULT_CATEGORY="miter_pass"
-        exit 0
-    elif (( miter_ret == 2 )); then
-        RESULT_CATEGORY="miter_unknown"
-        capture_failed_seed "miter unknown state"
-        exit 1
-    fi
-
-    # ───── Verilator simulation fallback ──────────────────────────
-    verilator_ret=0
-    time_stage run_verilator "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR" || verilator_ret=$?
-
-    # ───── optional SMTBMC (Z3) checks ────────────────────────────
-    if (( USE_SMTBMC )); then
-        smt="$OUT_DIR/eq_top.smt2"
-        if time_stage run_z3_smt "$OUT_DIR" "$smt" "$LOG_DIR"; then
-            RESULT_CATEGORY="bmc_pass"
-            exit 0
-        else
-            RESULT_CATEGORY="bmc_fail"
-        fi
-
-        if time_stage run_z3_induct "$OUT_DIR" "$smt" "$LOG_DIR"; then
-            RESULT_CATEGORY="induct_pass"
-            exit 0
-        else
-            RESULT_CATEGORY="induct_fail"
-        fi
-    fi
-
-    # ───── result handling ────────────────────────────────────────
-    case "$miter_ret:$verilator_ret" in
-        "1:1") RESULT_CATEGORY="miter_fail_verilator_fail"       ;;
-        "1:0") RESULT_CATEGORY="miter_fail_verilator_pass"       ;   capture_failed_seed "miter failed, but Verilator passed" "epic"; exit 0 ;;
-        "1:2") RESULT_CATEGORY="miter_fail_verilator_error"      ;   capture_failed_seed "miter failed, Verilator error"      "rare"; exit 1 ;;
-        "3:1") RESULT_CATEGORY="miter_timeout_verilator_fail"    ;;
-        "3:2") RESULT_CATEGORY="miter_timeout_verilator_error"   ;   capture_failed_seed "miter timeout, Verilator error"     "rare"; exit 1 ;;
-        "3:0") RESULT_CATEGORY="miter_timeout_verilator_pass"    ;   exit 0 ;;
-        *)     RESULT_CATEGORY="miter_unknown_verilator_unknown" ;   capture_failed_seed "miter unknown, Verilator unknown"   "rare"; exit 1 ;;
-    esac
-
+# ───── structural equiv (Yosys) ───────────────────────────────
+if [ "$VENDOR" = "vivado" ] && time_stage run_struct "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR"; then
+    RESULT_CATEGORY="structural_pass"
+    exit 0
 fi
+
+# ───── SAT miter (Yosys-sat) ──────────────────────────────────
+miter_ret=0
+time_stage run_miter "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR" || miter_ret=$?
+
+if (( miter_ret == 0 )); then
+    RESULT_CATEGORY="miter_pass"
+    exit 0
+elif (( miter_ret == 2 )); then
+    RESULT_CATEGORY="miter_unknown"
+    capture_failed_seed "miter unknown state"
+    exit 1
+fi
+
+# ───── Verilator simulation fallback ──────────────────────────
+verilator_ret=0
+time_stage run_verilator "$OUT_DIR" "$SYNTH_TOP" "$IMPL_TOP" "$LOG_DIR" || verilator_ret=$?
+
+# ───── optional SMTBMC (Z3) checks ────────────────────────────
+if (( USE_SMTBMC )); then
+    smt="$OUT_DIR/eq_top.smt2"
+    if time_stage run_z3_smt "$OUT_DIR" "$smt" "$LOG_DIR"; then
+        RESULT_CATEGORY="bmc_pass"
+        exit 0
+    else
+        RESULT_CATEGORY="bmc_fail"
+    fi
+
+    if time_stage run_z3_induct "$OUT_DIR" "$smt" "$LOG_DIR"; then
+        RESULT_CATEGORY="induct_pass"
+        exit 0
+    else
+        RESULT_CATEGORY="induct_fail"
+    fi
+fi
+
+# ───── result handling ────────────────────────────────────────
+case "$miter_ret:$verilator_ret" in
+    "1:1") RESULT_CATEGORY="miter_fail_verilator_fail"       ;;
+    "1:0") RESULT_CATEGORY="miter_fail_verilator_pass"       ;   capture_failed_seed "miter failed, but Verilator passed" "epic"; exit 0 ;;
+    "1:2") RESULT_CATEGORY="miter_fail_verilator_error"      ;   capture_failed_seed "miter failed, Verilator error"      "rare"; exit 1 ;;
+    "3:1") RESULT_CATEGORY="miter_timeout_verilator_fail"    ;;
+    "3:2") RESULT_CATEGORY="miter_timeout_verilator_error"   ;   capture_failed_seed "miter timeout, Verilator error"     "rare"; exit 1 ;;
+    "3:0") RESULT_CATEGORY="miter_timeout_verilator_pass"    ;   exit 0 ;;
+    *)     RESULT_CATEGORY="miter_unknown_verilator_unknown" ;   capture_failed_seed "miter unknown, Verilator unknown"   "rare"; exit 1 ;;
+esac
 
 
 # ───── Reduction of failed seeds ─────────────────────────────────
