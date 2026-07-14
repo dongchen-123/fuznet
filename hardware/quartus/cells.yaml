@@ -33,3 +33,14 @@ fiftyfivenm_io_obuf:
   ports:
     i: { dir: input }
     o: { dir: output, type: ext_out }
+
+# BRAM
+ram_w1_a4:
+  weight: 40
+  ports:
+    clk:  { dir: input, type: ext_clk }
+    we:   { dir: input }
+    addr: { dir: input,  width: 4 }
+    din:  { dir: input,  width: 1 }
+    dout: { dir: output, width: 1, seq_inputs: [addr, din, we] }
+  resources: { m9k: 1 }

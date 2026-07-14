@@ -52,7 +52,7 @@ PERMANENT_LOGS=${PERMANENT_LOGS:-logs}
 RESULT_CATEGORY=""
 
 if [ "$VENDOR" = "quartus" ]; then
-    cp "$CELL_LIB" "$SETTINGS_TOML" "$OUT_DIR/" 2>/dev/null || true
+    cp "$CELL_LIB" "$SETTINGS_TOML" "hardware/quartus/fuznet_ram.v" "$OUT_DIR/" 2>/dev/null || true
 else
     cp "$CELL_LIB" "$VIVADO_TCL" "$SETTINGS_TOML" "$OUT_DIR/" 2>/dev/null || true
     export VIVADO_TCL="$OUT_DIR/$(basename "$VIVADO_TCL")"

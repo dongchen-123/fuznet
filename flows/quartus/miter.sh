@@ -18,7 +18,8 @@ run_miter() {
 
     yosys -p "read_verilog $PRIMS_V $out/${synth_top}_yosys.v $out/${impl_top}_yosys.v; \
         miter -equiv $synth_top $impl_top miter; hierarchy -top miter; flatten; \
-        proc; opt_clean; clk2fflogic; \
+        proc; opt_clean; memory_map; opt_clean; \
+        clk2fflogic; \
         sat -seq 20 -set-init-zero -prove trigger 0 miter" \
         > "$log_dir/miter.log" 2>&1 || miter_ret=$?
 
