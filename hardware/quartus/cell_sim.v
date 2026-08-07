@@ -204,3 +204,86 @@ output [port_b_data_width - 1:0] portbdataout;
   assign portbdataout = {port_b_data_width{1'b0}};
 
 endmodule
+
+
+module fiftyfivenm_mac_mult
+   (
+    dataa,
+    datab,
+    signa,
+    signb,
+    clk,
+    aclr,
+    ena,
+    dataout,
+    devclrn,
+    devpor
+    );
+
+    parameter dataa_width = 1;
+    parameter datab_width = 1;
+    parameter lpm_hint = "true";
+    parameter lpm_type = "fiftyfivenm_mac_mult";
+    parameter dataa_clock = "none";
+    parameter datab_clock = "none";
+    parameter signa_clock = "none";
+    parameter signb_clock = "none";
+
+
+// SIMULATION_ONLY_PARAMETERS_BEGIN
+
+    parameter dataout_width  = dataa_width + datab_width;
+
+// SIMULATION_ONLY_PARAMETERS_END
+
+    input [dataa_width-1:0] dataa;
+    input [datab_width-1:0] datab;
+    input signa;
+    input signb;
+    input clk;
+    input aclr;
+    input ena;
+    input devclrn;
+    input devpor;
+
+    output [dataout_width-1:0] dataout;
+
+  wire signed [dataa_width:0] ea_c = signa ? {dataa[dataa_width-1], dataa} : {1'b0, dataa};
+  wire signed [datab_width:0] eb_c = signb ? {datab[datab_width-1], datab} : {1'b0, datab};
+
+  // Optional per-operand input registers. The fitter enables them by setting
+  // dataa_clock/datab_clock != "none" (clocked on clk, ena-gated); "none"
+  // keeps the operand combinational.
+  reg signed [dataa_width:0] ea_r;
+  reg signed [datab_width:0] eb_r;
+  initial begin ea_r = 0; eb_r = 0; end
+  always @(posedge clk)
+    if (ena) begin ea_r <= ea_c; eb_r <= eb_c; end
+
+  wire signed [dataa_width:0] ea = (dataa_clock == "none") ? ea_c : ea_r;
+  wire signed [datab_width:0] eb = (datab_clock == "none") ? eb_c : eb_r;
+  assign dataout = ea * eb;
+
+endmodule
+
+module fiftyfivenm_mac_out (
+    dataa, clk, aclr, ena, dataout, devclrn, devpor);
+
+    parameter dataa_width  = 1;
+    parameter output_clock = "none";
+    parameter lpm_hint     = "true";
+    parameter lpm_type     = "fiftyfivenm_mac_out";
+
+    input  [dataa_width-1:0] dataa;
+    input  clk, aclr, ena, devclrn, devpor;
+    output [dataa_width-1:0] dataout;
+
+    // The fitter may absorb the DSP output register into this block by setting
+    // output_clock != "none" (e.g. "0"), the result is then registered on clk
+    // (ena-gated, power-up 0). output_clock == "none" stays combinational.
+    reg [dataa_width-1:0] dataout_r;
+    initial dataout_r = {dataa_width{1'b0}};
+    always @(posedge clk)
+      if (ena) dataout_r <= dataa;
+    assign dataout = (output_clock == "none") ? dataa : dataout_r;
+endmodule

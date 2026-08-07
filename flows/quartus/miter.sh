@@ -16,12 +16,15 @@ run_miter() {
     ./scripts/quartus_yosysify.sh "$out/$synth_top.v" "$out/${synth_top}_yosys.v"
     ./scripts/quartus_yosysify.sh "$out/$impl_top.v" "$out/${impl_top}_yosys.v"
 
-    yosys -p "read_verilog $PRIMS_V $out/${synth_top}_yosys.v $out/${impl_top}_yosys.v; \
-        miter -equiv $synth_top $impl_top miter; hierarchy -top miter; flatten; \
-        proc; opt_clean; memory_map; opt_clean; \
-        clk2fflogic; \
-        sat -seq 20 -set-init-zero -prove trigger 0 miter" \
-        > "$log_dir/miter.log" 2>&1 || miter_ret=$?
+    (
+        ulimit -v 6000000 # limit subshell memory usage to 6 GB, prevents BRAM from using up too much memory
+        timeout 600 yosys -p "read_verilog $PRIMS_V $out/${synth_top}_yosys.v $out/${impl_top}_yosys.v; \
+            miter -equiv $synth_top $impl_top miter; hierarchy -top miter; flatten; \
+            proc; opt_clean; memory_map; opt_clean; \
+            clk2fflogic; \
+            sat -seq 20 -set-init-zero -prove trigger 0 miter" \
+            > "$log_dir/miter.log" 2>&1
+    ) || miter_ret=$?
 
     local miter_token=$(grep -oE 'SUCCESS!|FAIL!|TIMEOUT!' "$miter_log" || echo "UNKNOWN")
 

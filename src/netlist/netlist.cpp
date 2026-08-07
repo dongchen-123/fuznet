@@ -127,8 +127,12 @@ void Netlist::add_undriven_nets(NetType type, size_t n) {
 }
 
 void Netlist::drive_undriven_nets(double seq_mod_prob, double seq_port_prob, bool limit_to_one, NetType type) {
-    for (auto& net_ptr : nets) {
-        if (net_ptr->driver.port || net_ptr->net_type != type) continue;
+    std::vector<Net*> targets;
+    for (auto& net_ptr : nets)
+        if (!net_ptr->driver.port && net_ptr->net_type == type)
+            targets.push_back(net_ptr.get());
+    for (Net* net : targets) {
+        if (net->driver.port) continue;
 
         std::uniform_real_distribution<double> dist(0.0, 1.0);
         bool seq_mod = dist(rng) < seq_mod_prob;
@@ -136,7 +140,6 @@ void Netlist::drive_undriven_nets(double seq_mod_prob, double seq_port_prob, boo
         auto module_filter = [&](const ModuleSpec& ms) {
             return ms.outputs.size() == 1 &&
                    ms.outputs[0].net_type == type &&
-                   ms.outputs[0].width == 1 &&
                    !(seq_mod && ms.combinational);
         };
 
@@ -145,56 +148,71 @@ void Netlist::drive_undriven_nets(double seq_mod_prob, double seq_port_prob, boo
         Module* driver_module = make_module(driver_spec, false);
         Port*   driver_port   = driver_module->outputs[0].get();
 
-        driver_port->nets[0] = net_ptr.get();
-        net_ptr->driver.port = driver_port;
-        net_ptr->driver.bit = 0;
-        
-        for (auto& input_port : driver_module->inputs) {
-
-            std::set<int> forwad_group = get_combinational_group(input_port.get(), false);
-            std::set<int> comb_group   = get_combinational_group(input_port.get(), true);
-            std::set<int> seq_group;
-
-            for (auto id : forwad_group)
-                if (!comb_group.contains(id))
-                    seq_group.insert(id);
-
-            for (int i = 0; i < input_port->width; ++i) {
-
-                bool seq_port = dist(rng) < seq_port_prob;
-
-                auto same_type = [&](const Net* n) {return n->net_type == input_port->net_type; };
-
-                if (input_port->net_type == NetType::LOGIC) {
-
-                    std::function<bool(const Net*)> seq_filter = [&](const Net* n) {
-                        return seq_group.contains(n->id) && same_type(n);
-                    };
-
-                    std::function<bool(const Net*)> comb_filter = [&](const Net* n) {
-                        return !forwad_group.contains(n->id) && same_type(n);
-                    };
-
-                    if (seq_group.empty())
-                        seq_filter = comb_filter;
-
-                    Net* source = seq_port
-                                    ?  get_random_net(seq_filter)
-                                    :  get_random_net(comb_filter);
-
-                    input_port->nets[i] = source;
-                    source->add_sink(input_port.get(), i);
-                } else {
-                    Net* source = get_random_net(same_type);
-                    input_port->nets[i] = source;
-                    source->add_sink(input_port.get(), i);
-                }
-
-            }
+        driver_port->nets[0] = net;
+        net->driver.port = driver_port;
+        net->driver.bit = 0;
+        // drive remaining bits if port width > 1
+        for (int b = 1; b < driver_port->width; ++b)
+        {
+            Net *extra = make_net(driver_port->net_type);
+            driver_port->nets[b] = extra;
+            extra->driver = PortBit{driver_port, b};
         }
 
-        if (limit_to_one) break;
-    }
+            for (auto &input_port : driver_module->inputs)
+            {
+
+                std::set<int> forwad_group = get_combinational_group(input_port.get(), false);
+                std::set<int> comb_group = get_combinational_group(input_port.get(), true);
+                std::set<int> seq_group;
+
+                for (auto id : forwad_group)
+                    if (!comb_group.contains(id))
+                        seq_group.insert(id);
+
+                for (int i = 0; i < input_port->width; ++i)
+                {
+
+                    bool seq_port = dist(rng) < seq_port_prob;
+
+                    auto same_type = [&](const Net *n)
+                    { return n->net_type == input_port->net_type; };
+
+                    if (input_port->net_type == NetType::LOGIC)
+                    {
+
+                        std::function<bool(const Net *)> seq_filter = [&](const Net *n)
+                        {
+                            return seq_group.contains(n->id) && same_type(n);
+                        };
+
+                        std::function<bool(const Net *)> comb_filter = [&](const Net *n)
+                        {
+                            return !forwad_group.contains(n->id) && same_type(n);
+                        };
+
+                        if (seq_group.empty())
+                            seq_filter = comb_filter;
+
+                        Net *source = seq_port
+                                          ? get_random_net(seq_filter)
+                                          : get_random_net(comb_filter);
+
+                        input_port->nets[i] = source;
+                        source->add_sink(input_port.get(), i);
+                    }
+                    else
+                    {
+                        Net *source = get_random_net(same_type);
+                        input_port->nets[i] = source;
+                        source->add_sink(input_port.get(), i);
+                    }
+                }
+            }
+
+            if (limit_to_one)
+                break;
+        }
 }
 
 void Netlist::buffer_unconnected_outputs() {

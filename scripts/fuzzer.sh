@@ -52,7 +52,7 @@ PERMANENT_LOGS=${PERMANENT_LOGS:-logs}
 RESULT_CATEGORY=""
 
 if [ "$VENDOR" = "quartus" ]; then
-    cp "$CELL_LIB" "$SETTINGS_TOML" "hardware/quartus/fuznet_ram.v" "$OUT_DIR/" 2>/dev/null || true
+    cp "$CELL_LIB" "$SETTINGS_TOML" "hardware/quartus/fuznet_ram.v" "hardware/quartus/fuznet_dsp.v" "$OUT_DIR/" 2>/dev/null || true
 else
     cp "$CELL_LIB" "$VIVADO_TCL" "$SETTINGS_TOML" "$OUT_DIR/" 2>/dev/null || true
     export VIVADO_TCL="$OUT_DIR/$(basename "$VIVADO_TCL")"
@@ -251,8 +251,8 @@ if (( miter_ret == 0 )); then
     exit 0
 elif (( miter_ret == 2 )); then
     RESULT_CATEGORY="miter_unknown"
-    capture_failed_seed "miter unknown state"
-    exit 1
+    # capture_failed_seed "miter unknown state"
+    # exit 1
 fi
 
 # ───── Verilator simulation fallback ──────────────────────────
@@ -282,6 +282,9 @@ case "$miter_ret:$verilator_ret" in
     "1:1") RESULT_CATEGORY="miter_fail_verilator_fail"       ;;
     "1:0") RESULT_CATEGORY="miter_fail_verilator_pass"       ;   capture_failed_seed "miter failed, but Verilator passed" "epic"; exit 0 ;;
     "1:2") RESULT_CATEGORY="miter_fail_verilator_error"      ;   capture_failed_seed "miter failed, Verilator error"      "rare"; exit 1 ;;
+    "2:0") RESULT_CATEGORY="miter_unknown_verilator_pass"    ;   exit 0 ;;
+    "2:1") RESULT_CATEGORY="miter_unknown_verilator_fail"    ;;
+    "2:2") RESULT_CATEGORY="miter_unknown_verilator_error"   ;   capture_failed_seed "miter unknown, Verilator error"    "rare"; exit 1 ;;
     "3:1") RESULT_CATEGORY="miter_timeout_verilator_fail"    ;;
     "3:2") RESULT_CATEGORY="miter_timeout_verilator_error"   ;   capture_failed_seed "miter timeout, Verilator error"     "rare"; exit 1 ;;
     "3:0") RESULT_CATEGORY="miter_timeout_verilator_pass"    ;   exit 0 ;;

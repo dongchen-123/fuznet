@@ -44,3 +44,13 @@ ram_w1_a4:
     din:  { dir: input,  width: 1 }
     dout: { dir: output, width: 1, seq_inputs: [addr, din, we] }
   resources: { m9k: 1 }
+
+# DSP
+dsp_w9:
+  weight: 30
+  ports:
+    clk: { dir: input, type: ext_clk }
+    a:   { dir: input,  width: 9 }
+    b:   { dir: input,  width: 9 }
+    out: { dir: output, width: 18, seq_inputs: [a, b] }
+  resources: { dsp: 1 }
