@@ -230,7 +230,7 @@ fi
 
 case $impl_ret in
     0) ;;
-    1) RESULT_CATEGORY="impl_fail" ; exit 1 ;;
+    1) RESULT_CATEGORY="impl_fail"; capture_failed_seed "Implementation failed" "rare"; exit 1 ;;
     2) RESULT_CATEGORY="impl_crash"; capture_failed_seed "Implementation crashed" "rare"; exit 0 ;;
     3) RESULT_CATEGORY="impl_timeout"; capture_failed_seed "Implementation timed out" "rare"; exit 1 ;;
 esac
