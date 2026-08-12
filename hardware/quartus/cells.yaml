@@ -15,9 +15,16 @@ fiftyfivenm_lcell_comb:
 dffeas:
   weight: 100
   ports:
-    q:   { dir: output, seq_inputs: [d] }
-    clk: { dir: input, type: ext_clk }   # Intel: no clock buffer, ext_clk connected directly
-    d:   { dir: input }
+    q:      { dir: output, seq_inputs: [d] }
+    clk:    { dir: input, type: ext_clk }   # Intel: no clock buffer, ext_clk connected directly
+    d:      { dir: input }
+    ena:    { dir: input }
+    clrn:   { dir: input }
+    prn:    { dir: input }
+    sclr:   { dir: input }
+    aload:  { dir: input }
+    asdata: { dir: input }
+
   resources: { lc: 1 }
 
 # input buffer
@@ -44,6 +51,17 @@ ram_w1_a4:
     din:  { dir: input,  width: 1 }
     dout: { dir: output, width: 1, seq_inputs: [addr, din, we] }
   resources: { m9k: 1 }
+
+ram_w9_a4:
+  weight: 20
+  ports:
+    clk:  { dir: input, type: ext_clk }
+    we:   { dir: input }
+    addr: { dir: input, width: 4 }
+    din:  { dir: input, width: 9 }
+    dout: { dir: output, width: 9, seq_inputs: [addr, din, we]}
+  resources: { m9k: 1 }
+
 
 # DSP
 dsp_w9:
