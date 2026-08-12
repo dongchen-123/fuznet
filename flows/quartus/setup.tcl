@@ -1,4 +1,5 @@
 # proj name and verilog file name are hardcoded, change below
+# might change device? small
 project_new fuzzed_netlist -overwrite
 set_global_assignment -name FAMILY "MAX 10"
 set_global_assignment -name DEVICE 10M50DAF484C7G
@@ -6,5 +7,17 @@ set_global_assignment -name TOP_LEVEL_ENTITY top
 set_global_assignment -name VERILOG_FILE fuzzed_netlist.v
 set_global_assignment -name VERILOG_FILE fuznet_ram.v
 set_global_assignment -name VERILOG_FILE fuznet_dsp.v
+set_global_assignment -name VERILOG_FILE fuznet_ram_w9.v
 set_global_assignment -name SDC_FILE fuzzed_netlist.sdc
+set_global_assignment -name FITTER_AGGRESSIVE_ROUTABILITY_OPTIMIZATION ALWAYS
+set_global_assignment -name OPTIMIZE_POWER_DURING_FITTING OFF
+set_global_assignment -name OPTIMIZE_TIMING "NORMAL COMPILATION"
+set_global_assignment -name AUTO_DELAY_CHAINS_FOR_HIGH_FANOUT_INPUT_PINS ON
+set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC_FOR_AREA ON
+set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC ON
+set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_DUPLICATION ON
+set_global_assignment -name PHYSICAL_SYNTHESIS_MAP_LOGIC_TO_MEMORY_FOR_AREA ON
+set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_RETIMING ON
+set_global_assignment -name PHYSICAL_SYNTHESIS_ASYNCHRONOUS_SIGNAL_PIPELINING ON
+set_global_assignment -name PHYSICAL_SYNTHESIS_EFFORT EXTRA
 project_close
