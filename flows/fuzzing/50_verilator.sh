@@ -25,7 +25,7 @@ run_verilator() {
     fi
 
     if ! verilator -cc --exe $VERILATOR_FLAGS -Wno-fatal -I"$out" \
-            --trace-underscore -Mdir "$out/build" \
+            --trace-underscore -Mdir "$out/build" --top-module eq_top \
             "$out/eq_top.v" "$PRIMS_V" "$out/$cpp_tb" > "$log_dir/verilator.log" 2>&1; then
         fail "Verilator generate failed"; return 2
     fi
